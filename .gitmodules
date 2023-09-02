@@ -1,0 +1,3 @@
+[submodule "vghbot_kit"]
+	path = vghbot_kit
+	url = https://github.com/zmh00/vghbot_kit.git
