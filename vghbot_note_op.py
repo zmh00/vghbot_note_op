@@ -421,7 +421,7 @@ class OPNote():
             (df_template['OP_TYPE']==data_gsheet['OP_TYPE'])
             &((df_template['VS_CODE']==self.config['VS_CODE']) | (df_template['VS_CODE']==DEFAULT_SYMBOL))
             &((df_template['R_CODE']==self.config['R_CODE']) | (df_template['R_CODE']==DEFAULT_SYMBOL)),:
-            ].sort_values(by =['VS_CODE','R_CODE'], axis=0, ascending=False)
+            ].sort_values(by =['VS_CODE','R_CODE'], axis=0)
         template = df_template_selected.iloc[0,3]
 
         # 處理complications紀錄，如果沒有Complications輸出Nil
@@ -592,7 +592,7 @@ class OPNote_IVI(OPNote):
             (df_template['OP_TYPE']=='IVI')
             &((df_template['VS_CODE']==post_data['man']) | (df_template['VS_CODE']==DEFAULT_SYMBOL))
             &((df_template['R_CODE']==self.config['R_CODE']) | (df_template['R_CODE']==DEFAULT_SYMBOL)), :
-            ].sort_values(by =['VS_CODE','R_CODE'], axis=0, ascending=False)
+            ].sort_values(by =['VS_CODE','R_CODE'], axis=0)
         template = df_template_selected.iloc[0,3]
         post_data['op2data'] = Template(template).substitute(data_gsheet)
 
@@ -782,48 +782,50 @@ def IVI_schedule_download(config, gclient):
         else:
             return ""
     
-    # 自動獲取排程
-    date = check_opdate()
-    vgh_client = vghbot_login.Client(TEST_MODE=TEST_MODE)
-    vgh_client.scheduler_login()
-    url = 'http://10.97.235.122/Exm/ExmQ010/ExmQ010_Read'
-    payload = {
-        'sort':'',
-        'group': '',
-        'filter': '',
-        'queryBeginDate': str(int(date[0:3])+1911)+date[3:],
-        'queryEndDate': str(int(date[0:3])+1911)+date[3:],
-        'scheduleID': 'CTOPHIVI',
-        'cancelYN': 'N',
-        'aheadScheduleYN': 'N',
-        'caseFrom': 'O',
-        'exmRoomID':'',
-        'schShiftNo':'',
-        'searchNRCode':'',
-        'SearchCriticalYN': 'N',
-        'SearchISOLYN': 'N'
-    }
-    res = vgh_client.session.post(url=url, data=payload)
-    res_json = json.loads(res.text)
-    res_df = pandas.DataFrame(res_json['Data'])
-    res_df = res_df[["PatNo", "PatNMC", "ScheduleName", "CreateID", "CreateName", "CombineSchExmItemName"]]
-    res_df.columns = [config['COL_HISNO'], config['COL_NAME'], '排程種類', '醫師登號', '醫師姓名', '排程內容']
-    
-    # 資料處理
-    res_df[config['COL_VS_CODE']] = res_df['醫師登號'].str[3:7]
-    res_df[config['COL_NAME']] = res_df[config['COL_NAME']].str.strip()
-    res_df[config['COL_DIAGNOSIS']] = res_df['排程內容'].apply(get_diagnosis)
-    res_df[config['COL_SIDE']] = res_df['排程內容'].apply(get_side)
-    res_df[config['COL_DRUGTYPE']] = res_df['排程內容'].apply(get_drug)
-    res_df[config['COL_DRUGTYPE']] = res_df[config['COL_DRUGTYPE']].str.lstrip('+')
-    res_df[config['COL_CHARGE']] = res_df['排程內容'].apply(get_charge)
-    df_output = res_df[[config['COL_VS_CODE'],config['COL_NAME'],config['COL_HISNO'],config['COL_DIAGNOSIS'],config['COL_SIDE'],config['COL_DRUGTYPE'],config['COL_CHARGE']]]
+    check = input("==>自動下載並更新IVI排程表單: (y:是，且會覆蓋原本BOT表單內容) | (n:否，維持BOT表單內容)")
+    if check.lower().strip() == 'y':
+        # 自動獲取排程
+        date = check_opdate()
+        vgh_client = vghbot_login.Client(TEST_MODE=TEST_MODE)
+        vgh_client.scheduler_login()
+        url = 'http://10.97.235.122/Exm/ExmQ010/ExmQ010_Read'
+        payload = {
+            'sort':'',
+            'group': '',
+            'filter': '',
+            'queryBeginDate': str(int(date[0:3])+1911)+date[3:],
+            'queryEndDate': str(int(date[0:3])+1911)+date[3:],
+            'scheduleID': 'CTOPHIVI',
+            'cancelYN': 'N',
+            'aheadScheduleYN': 'N',
+            'caseFrom': 'O',
+            'exmRoomID':'',
+            'schShiftNo':'',
+            'searchNRCode':'',
+            'SearchCriticalYN': 'N',
+            'SearchISOLYN': 'N'
+        }
+        res = vgh_client.session.post(url=url, data=payload)
+        res_json = json.loads(res.text)
+        res_df = pandas.DataFrame(res_json['Data'])
+        res_df = res_df[["PatNo", "PatNMC", "ScheduleName", "CreateID", "CreateName", "CombineSchExmItemName"]]
+        res_df.columns = [config['COL_HISNO'], config['COL_NAME'], '排程種類', '醫師登號', '醫師姓名', '排程內容']
+        
+        # 資料處理
+        res_df[config['COL_VS_CODE']] = res_df['醫師登號'].str[3:7]
+        res_df[config['COL_NAME']] = res_df[config['COL_NAME']].str.strip()
+        res_df[config['COL_DIAGNOSIS']] = res_df['排程內容'].apply(get_diagnosis)
+        res_df[config['COL_SIDE']] = res_df['排程內容'].apply(get_side)
+        res_df[config['COL_DRUGTYPE']] = res_df['排程內容'].apply(get_drug)
+        res_df[config['COL_DRUGTYPE']] = res_df[config['COL_DRUGTYPE']].str.lstrip('+')
+        res_df[config['COL_CHARGE']] = res_df['排程內容'].apply(get_charge)
+        df_output = res_df[[config['COL_VS_CODE'],config['COL_NAME'],config['COL_HISNO'],config['COL_DIAGNOSIS'],config['COL_SIDE'],config['COL_DRUGTYPE'],config['COL_CHARGE']]]
 
-    # 自動更新BOT
-    ssheet = gclient.client.open(config['SPREADSHEET'])
-    wsheet = ssheet.worksheet_by_title(config['WORKSHEET'])
-    wsheet.clear(start = 'A2')
-    wsheet.set_dataframe(df_output, 'A1', copy_index=False, nan='')
+        # 自動更新BOT
+        ssheet = gclient.client.open(config['SPREADSHEET'])
+        wsheet = ssheet.worksheet_by_title(config['WORKSHEET'])
+        wsheet.clear(start = 'A2')
+        wsheet.set_dataframe(df_output, 'A1', copy_index=False, nan='')
 
     # 打開BOT讓使用者編輯
     edge_path="C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
@@ -832,8 +834,8 @@ def IVI_schedule_download(config, gclient):
 
     # 且要有停頓讓使用者編輯完
     while True:
-        check = input("是否已編輯完成: (y:是)")
-        if check.lower() == 'y':
+        check = input("==>等待BOT表單編輯完成: (y:是，已編輯完成)")
+        if check.lower().strip() == 'y':
             return vgh_client, date
         
 
@@ -874,7 +876,7 @@ TEST_MODE = False
 UPDATER_OWNER = 'zmh00'
 UPDATER_REPO = 'vghbot_note_op'
 UPDATER_FILENAME = 'op'
-UPDATER_VERSION_TAG = 'v1.0'
+UPDATER_VERSION_TAG = 'v1.1'
 DEFAULT_SYMBOL = '~'
 
 if __name__ == '__main__':
