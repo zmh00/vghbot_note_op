@@ -1,7 +1,5 @@
-playwright
 requests
 pandas
 lxml
 pygsheets
 beautifulsoup4
-pyinstaller

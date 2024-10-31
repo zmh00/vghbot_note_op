@@ -16,6 +16,8 @@ from vghbot_kit import gsheet
 from vghbot_kit import vghbot_login
 from vghbot_kit import updater_cmd
 
+# pyinstaller -F vghbot_note_op.py
+
 class OPNote():
     def __init__(self, webclient, config):
         ## 將session轉移進來
@@ -416,7 +418,7 @@ class OPNote():
             post_data['diaga'] = post_data['diaga'] + f" {data_gsheet['OP_SIDE']}"
 
         # 處理病歷內文:
-        df_template = self.gc.get_df(gsheet.GSHEET_SPREADSHEET, gsheet.GSHEET_WORKSHEET_TEMPLATE_OPNOTE)
+        df_template = self.gc.get_df(gsheet.GSHEET_SPREADSHEET, gsheet.GSHEET_WORKSHEET_TEMPLATE_OPNOTE) # FIXME
         df_template_selected = df_template.loc[ 
             (df_template['OP_TYPE']==data_gsheet['OP_TYPE'])
             &((df_template['VS_CODE']==self.config['VS_CODE']) | (df_template['VS_CODE']==DEFAULT_SYMBOL))
@@ -587,7 +589,7 @@ class OPNote_IVI(OPNote):
         # data_gsheet['TRANSFORMED_DISTANCE'] = NOTE_TRANSFORM_IVIDISTANCE.get(data_gsheet['COL_PHAKIC'], "3.5")
         data_gsheet['TRANSFORMED_DISTANCE'] = '4.0'
 
-        df_template = self.gc.get_df(gsheet.GSHEET_SPREADSHEET, gsheet.GSHEET_WORKSHEET_TEMPLATE_OPNOTE)
+        df_template = self.gc.get_df(gsheet.GSHEET_SPREADSHEET, gsheet.GSHEET_WORKSHEET_TEMPLATE_OPNOTE) #  FIXME 每個資料都抓一次會耗盡google API 資源
         df_template_selected = df_template.loc[ 
             (df_template['OP_TYPE']=='IVI')
             &((df_template['VS_CODE']==post_data['man']) | (df_template['VS_CODE']==DEFAULT_SYMBOL))
@@ -719,17 +721,18 @@ def check_op_type(input_string:str):
         return None
 
 
-def IVI_schedule_download(config, gclient):
+def IVI_schedule_download(gclient, config, **kwargs):
     '''
     自動下載排程
     '''
     # 處理函數定義
     def get_diagnosis(s):
         check_list = ["AMD","PCV","RAP","mCNV","CRVO", "BRVO", "DME", "VH", "PDR", "NVG", "CME"]
+        final = ""
         for i in check_list:
             if s.find(i) > -1:
-                return i
-        return ""
+                final = final + i + "+"
+        return final.strip("+")
 
     def get_side(s):
         if s.find("OD")>-1:
@@ -743,26 +746,27 @@ def IVI_schedule_download(config, gclient):
 
     def get_drug(s):
         final = ""
-        if s.find("STK") > -1:
-            final = final+"+STK"
-        if s.find("TPA") > -1:
-            final = "+TPA"+final
-        if (s.find("IVI-L") > -1) and (s.find("IVI-E") > -1):
-            return "Eylea"+final
+
+        if s.find("IVIE") > -1:
+            final = final + "+Eylea(8mg)"
         if s.find("IVI-F") > -1:
-            return "Faricimab"+final
+            final = final + "+Faricimab"
         if s.find("IVI-B") > -1:
-            return "Beovu"+final
+            final = final + "+Beovu"
         if s.find("IVI-A") > -1:
-            return "Avastin"+final
+            final = final + "+Avastin"
         if s.find("IVI-L") > -1:
-            return "Lucentis"+final
+            final = final + "+Lucentis"
         if s.find("IVI-E") > -1:
-            return "Eylea"+final
+            final = final + "+Eylea"
         if s.find("IVI-Ozu") > -1:
-            return "Ozurdex"+final
-        else:
-            return ""+final
+            final = final + "+Ozurdex"
+        if s.find("STK") > -1:
+            final = final + "+STK"
+        if s.find("TPA") > -1:
+            final = final + "+TPA"
+        
+        return final.strip('+')
 
     def get_charge(s):
         if s.find("NHI") > -1:
@@ -770,7 +774,7 @@ def IVI_schedule_download(config, gclient):
         elif s.find("drug f") > -1:
             return "Drug-Free"
         elif s.find("all f") > -1:
-            return "All-free"
+            return "All-Free"
         elif s.find("SP-A") > -1:
             return "SP-A"
         elif s.find("SP-1") > -1:
@@ -782,13 +786,16 @@ def IVI_schedule_download(config, gclient):
         else:
             return ""
     
+    ssheet = gclient.client.open(config['SPREADSHEET'])
+    wsheet = ssheet.worksheet_by_title(config['WORKSHEET'])
+
     check = input("==>自動下載並更新IVI排程表單: (y:是，且會覆蓋原本BOT表單內容) | (n:否，維持BOT表單內容)")
     if check.lower().strip() == 'y':
         # 自動獲取排程
         date = check_opdate()
         vgh_client = vghbot_login.Client(TEST_MODE=TEST_MODE)
-        vgh_client.scheduler_login()
-        url = 'http://10.97.235.122/Exm/ExmQ010/ExmQ010_Read'
+        vgh_client.scheduler_login(**kwargs)
+        url = 'https://cks.vghtpe.gov.tw/Exm/ExmQ010/ExmQ010_Read'
         payload = {
             'sort':'',
             'group': '',
@@ -817,15 +824,14 @@ def IVI_schedule_download(config, gclient):
         res_df[config['COL_DIAGNOSIS']] = res_df['排程內容'].apply(get_diagnosis)
         res_df[config['COL_SIDE']] = res_df['排程內容'].apply(get_side)
         res_df[config['COL_DRUGTYPE']] = res_df['排程內容'].apply(get_drug)
-        res_df[config['COL_DRUGTYPE']] = res_df[config['COL_DRUGTYPE']].str.lstrip('+')
         res_df[config['COL_CHARGE']] = res_df['排程內容'].apply(get_charge)
         df_output = res_df[[config['COL_VS_CODE'],config['COL_NAME'],config['COL_HISNO'],config['COL_DIAGNOSIS'],config['COL_SIDE'],config['COL_DRUGTYPE'],config['COL_CHARGE']]]
 
         # 自動更新BOT
-        ssheet = gclient.client.open(config['SPREADSHEET'])
-        wsheet = ssheet.worksheet_by_title(config['WORKSHEET'])
         wsheet.clear(start = 'A2')
         wsheet.set_dataframe(df_output, 'A1', copy_index=False, nan='')
+    else:
+        vgh_client = vghbot_login.Client(TEST_MODE=TEST_MODE)
 
     # 打開BOT讓使用者編輯
     edge_path="C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
@@ -836,6 +842,7 @@ def IVI_schedule_download(config, gclient):
     while True:
         check = input("==>等待BOT表單編輯完成: (y:是，已編輯完成)")
         if check.lower().strip() == 'y':
+            # return True
             return vgh_client, date
         
 
@@ -876,7 +883,7 @@ TEST_MODE = False
 UPDATER_OWNER = 'zmh00'
 UPDATER_REPO = 'vghbot_note_op'
 UPDATER_FILENAME = 'op'
-UPDATER_VERSION_TAG = 'v1.1'
+UPDATER_VERSION_TAG = 'v1.1.3'
 DEFAULT_SYMBOL = '~'
 
 if __name__ == '__main__':
